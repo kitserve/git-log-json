@@ -20,7 +20,7 @@ def main(argv):
 	argumentParser.add_argument('-p', '--path', help='Path to Git directory', required=True)
 	argumentParser.add_argument('-b', '--branch', help='Branch to analyse, defaults to the current active branch', required=False)
 	argumentParser.add_argument('-o', '--output-file', help='Name of analysis results file', required=True)
-	argumentParser.add_argument('-d', '--debug', help='Output extra debugging information', default=False, required=False)
+	argumentParser.add_argument('-d', '--debug', help='Output extra debugging information', default=False, action='store_true')
 	args = vars(argumentParser.parse_args())
 
 	# Validate args and exit if any are incorrect
@@ -87,7 +87,7 @@ def main(argv):
 			for file in commit.stats.files:
 				if not first_commit:
 					output_file.write(',')
-				output_file.write(json.dumps({'revision': commit.hexsha, 'author': commit.author.name, 'email': commit.author.email, 'date': datetime.datetime.fromtimestamp(commit.committed_date).isoformat(), 'modified': file}))
+				output_file.write(json.dumps({'revision': commit.hexsha, 'author': commit.author.name, 'email': commit.author.email, 'date': datetime.datetime.fromtimestamp(commit.committed_date).isoformat(), 'message': commit.message.strip(), 'modified': file, 'extension': os.path.splitext(file)[1]}))
 				first_commit = False
 				total_revisions += 1
 			total_commits += 1
