@@ -23,6 +23,10 @@ def main(argv):
 	argumentParser.add_argument('-d', '--debug', help='Output extra debugging information', default=False, action='store_true')
 	args = vars(argumentParser.parse_args())
 
+	# @see https://github.com/gitpython-developers/GitPython/issues/364
+	# @see https://stackoverflow.com/questions/33916648/get-the-diff-details-of-first-commit-in-gitpython
+	EMPTY_TREE_SHA = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+
 	# Validate args and exit if any are incorrect
 	path = os.path.realpath(args['path'])
 
@@ -82,16 +86,75 @@ def main(argv):
 
 	with open(args['output_file'], 'w') as output_file:
 		output_file.write('[')
+		if args['debug']:
+			output_file.write('\n')
 		# iter_commits() returns an iterator rather than a list, so we need output each revision record as a separate JSON string
 		for commit in repo.iter_commits(rev = branch):
+			if len(commit.parents) == 0:
+				previous_commit = None
+			else:
+				previous_commit = commit.parents[0].tree
 			for file in commit.stats.files:
 				if not first_commit:
 					output_file.write(',')
-				output_file.write(json.dumps({'revision': commit.hexsha, 'author': commit.author.name, 'email': commit.author.email, 'date': datetime.datetime.fromtimestamp(commit.committed_date).isoformat(), 'message': commit.message.strip(), 'modified': file, 'extension': os.path.splitext(file)[1]}))
+					if args['debug']:
+						output_file.write('\n')
+				status = repo.git.diff('--name-status', previous_commit, file).split('\t')[0]
+				if status == '':
+					status = 'Added'
+					lines_added, lines_removed, dummy = repo.git.diff(EMPTY_TREE_SHA, file, numstat=True).split('\t')
+				elif status == 'A':
+					status = 'Added'
+					lines_added, lines_removed, dummy = repo.git.diff(previous_commit, file, numstat=True).split('\t')
+				elif status == 'C':
+					status = 'Copied'
+					lines_added, lines_removed, dummy = repo.git.diff(previous_commit, file, numstat=True).split('\t')
+				elif status == 'D':
+					status = 'Deleted'
+					lines_added, lines_removed, dummy = repo.git.diff(previous_commit, file, numstat=True).split('\t')
+				elif status == 'M':
+					status = 'Modified'
+					lines_added, lines_removed, dummy = repo.git.diff(previous_commit, file, numstat=True).split('\t')
+				elif status == 'R':
+					status = 'Renamed'
+					lines_added = 0
+					lines_removed = 0
+				elif status == 'T':
+					status = 'Type (mode) changed'
+					lines_added = 0
+					lines_removed = 0
+				elif status == 'U':
+					status = 'Unmerged'
+					lines_added = 0
+					lines_removed = 0
+				elif status == 'X':
+					status = 'Unknown'
+					lines_added = None
+					lines_removed = None
+				elif status == 'B':
+					status = 'Broken pairing'
+					lines_added = None
+					lines_removed = None
+				try:
+					lines_added = int(lines_added)
+				except:
+					pass
+				try:
+					lines_removed = int(lines_removed)
+				except:
+					pass
+				if args['debug']:
+					output_file.write(json.dumps({'revision': commit.hexsha, 'author': commit.author.name, 'email': commit.author.email, 'date': datetime.datetime.fromtimestamp(commit.committed_date).isoformat(), 'message': commit.message.strip(), 'modified': file, 'extension': os.path.splitext(file)[1], 'status': status, 'lines_added': lines_added, 'lines_removed': lines_removed}, indent=1))
+				else:
+					output_file.write(json.dumps({'revision': commit.hexsha, 'author': commit.author.name, 'email': commit.author.email, 'date': datetime.datetime.fromtimestamp(commit.committed_date).isoformat(), 'message': commit.message.strip(), 'modified': file, 'extension': os.path.splitext(file)[1], 'status': status, 'lines_added': lines_added, 'lines_removed': lines_removed}))
 				first_commit = False
 				total_revisions += 1
 			total_commits += 1
+		if args['debug']:
+			output_file.write('\n')
 		output_file.write(']')
+		if args['debug']:
+			output_file.write('\n')
 
 	if args['debug']:
 		print(f'Debug: wrote {total_revisions} file modification record(s) from {total_commits} commit(s) in repo "{path}" on branch "{branch}" to JSON file "{args["output_file"]}".')
