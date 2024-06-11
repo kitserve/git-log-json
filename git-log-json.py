@@ -8,6 +8,7 @@ import datetime
 import git
 import json
 import os
+import shlex
 import sys
 
 __authors__   = ["Kitserve <kitserve at users dot noreply dot github dot com>"]
@@ -23,6 +24,7 @@ def main(argv):
 	argumentParser.add_argument('-d', '--debug', help='Output extra debugging information', default=False, action='store_true')
 	args = vars(argumentParser.parse_args())
 
+	# @note We should probably be using git.diff.Diffable.NULL_TREE instead of this.
 	# @see https://github.com/gitpython-developers/GitPython/issues/364
 	# @see https://stackoverflow.com/questions/33916648/get-the-diff-details-of-first-commit-in-gitpython
 	EMPTY_TREE_SHA = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
@@ -99,22 +101,47 @@ def main(argv):
 					output_file.write(',')
 					if args['debug']:
 						output_file.write('\n')
-				status = repo.git.diff('--name-status', previous_commit, file).split('\t')[0]
+				if previous_commit is None:
+					# There seems to be a bug in GitPython where it doesn't add the -- path separator when it should
+
+					# @see https://github.com/gitpython-developers/GitPython/issues/1931
+					#status = repo.git.diff('--name-status', previous_commit, file).split('\t')[0]
+					status = repo.git.diff('--name-status', '--', file).split('\t')[0]
+				else:
+					#status = repo.git.diff('--name-status', previous_commit, file).split('\t')[0]
+					status = repo.git.diff('--name-status', previous_commit.hexsha, '--', file).split('\t')[0]
 				if status == '':
 					status = 'Added'
-					lines_added, lines_removed, dummy = repo.git.diff(EMPTY_TREE_SHA, file, numstat=True).split('\t')
+					#lines_added, lines_removed, dummy = repo.git.diff(EMPTY_TREE_SHA, file, numstat=True).split('\t')
+					# If we're looking at a merge commit then numstat will be empty,
+					# so we need to work around that.
+					try:
+						lines_added, lines_removed, dummy = repo.git.diff('--numstat', EMPTY_TREE_SHA, '--', file).split('\t')
+					except Exception:
+						lines_added = None
+						lines_removed = None
 				elif status == 'A':
 					status = 'Added'
-					lines_added, lines_removed, dummy = repo.git.diff(previous_commit, file, numstat=True).split('\t')
+					#lines_added, lines_removed, dummy = repo.git.diff(previous_commit, file, numstat=True).split('\t')
+					lines_added, lines_removed, dummy = repo.git.diff('--numstat', EMPTY_TREE_SHA, '--', file).split('\t')
 				elif status == 'C':
 					status = 'Copied'
-					lines_added, lines_removed, dummy = repo.git.diff(previous_commit, file, numstat=True).split('\t')
+					#lines_added, lines_removed, dummy = repo.git.diff(previous_commit, file, numstat=True).split('\t')
+					lines_added, lines_removed, dummy = repo.git.diff('--numstat', EMPTY_TREE_SHA, '--', file).split('\t')
 				elif status == 'D':
 					status = 'Deleted'
-					lines_added, lines_removed, dummy = repo.git.diff(previous_commit, file, numstat=True).split('\t')
+					#lines_added, lines_removed, dummy = repo.git.diff(previous_commit, file, numstat=True).split('\t')
+					# If we're looking at a merge commit then numstat will be empty,
+					# so we need to work around that.
+					try:
+						lines_added, lines_removed, dummy = repo.git.diff('--numstat', EMPTY_TREE_SHA, '--', file).split('\t')
+					except Exception:
+						lines_added = None
+						lines_removed = None
 				elif status == 'M':
 					status = 'Modified'
-					lines_added, lines_removed, dummy = repo.git.diff(previous_commit, file, numstat=True).split('\t')
+					#lines_added, lines_removed, dummy = repo.git.diff(previous_commit, file, numstat=True).split('\t')
+					lines_added, lines_removed, dummy = repo.git.diff('--numstat', EMPTY_TREE_SHA, '--', file).split('\t')
 				elif status == 'R':
 					status = 'Renamed'
 					lines_added = 0
