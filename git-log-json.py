@@ -28,29 +28,29 @@ def main(argv):
 	path = os.path.realpath(args['path'])
 
 	if not os.path.isdir(path):
-		print(f'{args["path"]} is not a directory. Terminating.')
+		print(f'{args["path"]} is not a directory. Terminating.', file=sys.stderr)
 		sys.exit(1)
 
 	try:
 		repo = git.Repo(path)
 	except git.exc.InvalidGitRepositoryError:
-		print(f'{path} is not a valid git repository. Terminating.')
+		print(f'{path} is not a valid git repository. Terminating.', file=sys.stderr)
 		sys.exit(2)
 
 	if args['debug']:
-		print(f'Debug: repo "{path}" is {"not " if not repo.bare else ""}bare.')
-		print(f'Debug: repo "{path}" is currently on branch "{repo.active_branch}".')
+		print(f'Debug: repo "{path}" is {"not " if not repo.bare else ""}bare.', file=sys.stderr)
+		print(f'Debug: repo "{path}" is currently on branch "{repo.active_branch}".', file=sys.stderr)
 
 	# Warn if there are changes that haven't yet made it into Git history
 	if repo.is_dirty():
-		print(f'Warning: repo "{path}" is dirty. The following files have been modified:')
+		print(f'Warning: repo "{path}" is dirty. The following files have been modified:', file=sys.stderr)
 		for item in repo.index.diff(None):
-			print(f' {item.a_path}')
+			print(f' {item.a_path}', file=sys.stderr)
 
 	if len(repo.untracked_files):
-		print(f'Warning: repo "{path}" contains the following untracked files:')
+		print(f'Warning: repo "{path}" contains the following untracked files:', file=sys.stderr)
 		for file in repo.untracked_files:
-			print(f' {file}')
+			print(f' {file}', file=sys.stderr)
 
 	# Default to current active branch
 	if args['branch'] is None:
@@ -73,7 +73,7 @@ def main(argv):
 					break
 
 		if not branch:
-			print(f'Branch "{args["branch"]}" not found in repo "{path}". Terminating.')
+			print(f'Branch "{args["branch"]}" not found in repo "{path}". Terminating.', file=sys.stderr)
 			sys.exit(3)
 
 	total_commits = 0
@@ -88,9 +88,10 @@ def main(argv):
 
 	with open(args['output_file'], 'w') as output_file:
 		output_file.write('[')
+
 		if args['debug']:
 			output_file.write('\n')
-		previous_commit_sha = EMPTY_TREE_SHA
+
 		# iter_commits() returns an iterator rather than a list, so we need to output each revision record as a separate JSON string
 		for commit in repo.iter_commits(rev=branch):
 			previous_commit = commit.parents[0] if commit.parents else EMPTY_TREE_SHA
@@ -141,7 +142,6 @@ def main(argv):
 				first_entry = False
 
 			total_commits += 1
-			previous_commit_sha = commit.hexsha
 
 		if args['debug']:
 			output_file.write('\n')
