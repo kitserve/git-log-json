@@ -86,109 +86,68 @@ def main(argv):
 	# @see https://stackoverflow.com/questions/33916648/get-the-diff-details-of-first-commit-in-gitpython
 	EMPTY_TREE_SHA = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 
-	commits = []
-
-	for commit in repo.iter_commits(rev=branch):
-		commits.append(commit)
-
 	with open(args['output_file'], 'w') as output_file:
 		output_file.write('[')
 		if args['debug']:
 			output_file.write('\n')
 		previous_commit_sha = EMPTY_TREE_SHA
 		# iter_commits() returns an iterator rather than a list, so we need to output each revision record as a separate JSON string
-		for commit in reversed(commits):
-			#print(commit)
-			#continue
-			files = commit.stats.files
-			if len(files):
-				for file in files:
+		for commit in repo.iter_commits(rev=branch):
+			previous_commit = commit.parents[0] if commit.parents else EMPTY_TREE_SHA
+
+			diffs = {
+				diff.a_path: diff for diff in commit.diff(previous_commit, R=True)
+			}
+
+			for file, stats in commit.stats.files.items():
+				diff = diffs.get(file)
+
+				if not diff:
+					for diff in diffs.values():
+						if diff.b_path == path and diff.renamed:
+							break
+
+				# @see https://git-scm.com/docs/git-status
+				if diff.change_type == ' ':
+					status = 'Not modified'
+				elif diff.change_type == 'M':
+					status = 'Modified'
+				elif diff.change_type == 'T':
+					status = 'File type changed'
+				elif diff.change_type == 'A':
+					status = 'Added'
+				elif diff.change_type == 'D':
+					status = 'Deleted'
+				elif diff.change_type == 'R':
+					status = 'Renamed'
+				elif diff.change_type == 'C':
+					status = 'Copied'
+				elif diff.change_type == 'U':
+					status = 'Updated but unmerged'
+				else:
+					status = 'Unknown'
+
+				if not first_entry:
+					output_file.write(',')
+
+				if args['debug']:
 					if not first_entry:
-						output_file.write(',')
-						if args['debug']:
-							output_file.write('\n')
-					# There seems to be a bug in GitPython where it doesn't add the -- path separator when it should
-					# @see https://github.com/gitpython-developers/GitPython/issues/1931
-					#status = repo.git.diff('--name-status', previous_commit, file).split('\t')[0]
-					try:
-						status = repo.git.diff('--name-status', f'{previous_commit_sha}..{commit.hexsha}', '--', file).split('\t')[0]
-					except:
-						print(f'{previous_commit_sha}..{commit.hexsha} {file}')
-						raise
-					if status == '':
-						status = 'Added'
-						#lines_added, lines_removed, dummy = repo.git.diff(EMPTY_TREE_SHA, file, numstat=True).split('\t')
-						# If we're looking at a merge commit then numstat will be empty,
-						# so we need to work around that.
-						#print(f'{previous_commit_sha}..{commit.hexsha} {file}')
-						try:
-							lines_added, lines_removed, dummy = repo.git.diff('--numstat', f'{previous_commit_sha}..{commit.hexsha}', '--', file).split('\t')
-						except:
-							if args['debug']:
-								print(f'git diff --numstat {previous_commit_sha}..{commit.hexsha} -- {file}')
-							lines_added = None
-							lines_removed = None
-					elif status == 'A':
-						status = 'Added'
-						#lines_added, lines_removed, dummy = repo.git.diff(previous_commit, file, numstat=True).split('\t')
-						lines_added, lines_removed, dummy = repo.git.diff('--numstat', f'{previous_commit_sha}..{commit.hexsha}', '--', file).split('\t')
-					elif status == 'C':
-						status = 'Copied'
-						#lines_added, lines_removed, dummy = repo.git.diff(previous_commit, file, numstat=True).split('\t')
-						lines_added, lines_removed, dummy = repo.git.diff('--numstat', f'{previous_commit_sha}..{commit.hexsha}', '--', file).split('\t')
-					elif status == 'D':
-						status = 'Deleted'
-						#lines_added, lines_removed, dummy = repo.git.diff(previous_commit, file, numstat=True).split('\t')
-						# If we're looking at a merge commit then numstat will be empty,
-						# so we need to work around that.
-						#try:
-						lines_added, lines_removed, dummy = repo.git.diff('--numstat', f'{previous_commit_sha}..{commit.hexsha}', '--', file).split('\t')
-						#except Exception:
-						#	lines_added = None
-						#	lines_removed = None
-					elif status == 'M':
-						status = 'Modified'
-						#lines_added, lines_removed, dummy = repo.git.diff(previous_commit, file, numstat=True).split('\t')
-						lines_added, lines_removed, dummy = repo.git.diff('--numstat', f'{previous_commit_sha}..{commit.hexsha}', '--', file).split('\t')
-					elif status == 'R':
-						status = 'Renamed'
-						lines_added = 0
-						lines_removed = 0
-					elif status == 'T':
-						status = 'Type (mode) changed'
-						lines_added = 0
-						lines_removed = 0
-					elif status == 'U':
-						status = 'Unmerged'
-						lines_added = 0
-						lines_removed = 0
-					elif status == 'X':
-						status = 'Unknown'
-						lines_added = None
-						lines_removed = None
-					elif status == 'B':
-						status = 'Broken pairing'
-						lines_added = None
-						lines_removed = None
-					try:
-						lines_added = int(lines_added)
-					except:
-						pass
-					try:
-						lines_removed = int(lines_removed)
-					except:
-						pass
-					if args['debug']:
-						output_file.write(json.dumps({'revision': commit.hexsha, 'author': commit.author.name, 'email': commit.author.email, 'date': datetime.datetime.fromtimestamp(commit.committed_date).isoformat(), 'message': commit.message.strip(), 'modified': file, 'extension': f'.{os.path.basename(file).split('.')[-1]}', 'status': status, 'lines_added': lines_added, 'lines_removed': lines_removed}, indent=1))
-					else:
-						output_file.write(json.dumps({'revision': commit.hexsha, 'author': commit.author.name, 'email': commit.author.email, 'date': datetime.datetime.fromtimestamp(commit.committed_date).isoformat(), 'message': commit.message.strip(), 'modified': file, 'extension': f'.{os.path.basename(file).split('.')[-1]}', 'status': status, 'lines_added': lines_added, 'lines_removed': lines_removed}))
-					total_revisions += 1
-					first_entry = False
+						output_file.write('\n')
+					output_file.write(json.dumps({'revision': commit.hexsha, 'author': commit.author.name, 'email': commit.author.email, 'date': datetime.datetime.fromtimestamp(commit.committed_date).isoformat(), 'message': commit.message.strip(), 'modified': file, 'extension': f'.{os.path.basename(file).split('.')[-1]}', 'status': status, 'lines_added': stats['insertions'], 'lines_removed': stats['deletions']}, indent=1))
+				else:
+					output_file.write(json.dumps({'revision': commit.hexsha, 'author': commit.author.name, 'email': commit.author.email, 'date': datetime.datetime.fromtimestamp(commit.committed_date).isoformat(), 'message': commit.message.strip(), 'modified': file, 'extension': f'.{os.path.basename(file).split('.')[-1]}', 'status': status, 'lines_added': stats['insertions'], 'lines_removed': stats['deletions']}))
+
+				total_revisions += 1
+				first_entry = False
+
 			total_commits += 1
 			previous_commit_sha = commit.hexsha
+
 		if args['debug']:
 			output_file.write('\n')
+
 		output_file.write(']')
+
 		if args['debug']:
 			output_file.write('\n')
 
