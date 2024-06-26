@@ -39,7 +39,11 @@ def main(argv):
 
 	if args['debug']:
 		print(f'Debug: repo "{path}" is {"not " if not repo.bare else ""}bare.', file=sys.stderr)
-		print(f'Debug: repo "{path}" is currently on branch "{repo.active_branch}".', file=sys.stderr)
+		# @see https://github.com/gitpython-developers/GitPython/issues/633
+		try:
+			print(f'Debug: repo "{path}" is currently on branch "{repo.active_branch}".', file=sys.stderr)
+		except:
+			print(f'Debug: repo "{path}" is currently in detached head state.', file=sys.stderr)
 
 	# Warn if there are changes that haven't yet made it into Git history
 	if repo.is_dirty():
@@ -52,9 +56,13 @@ def main(argv):
 		for file in repo.untracked_files:
 			print(f' {file}', file=sys.stderr)
 
-	# Default to current active branch
-	if args['branch'] is None:
-		branch = repo.active_branch
+	try:
+		# Default to current active branch
+		if args['branch'] is None:
+			branch = repo.active_branch
+	except Exception as e:
+		print(f'Error: repo "{path}" is in detached head state. Error details:\n{e}\nExiting.', file=sys.stderr)
+		sys.exit(4)
 
 	# Check that the requested branch exists in the repo
 	else:
