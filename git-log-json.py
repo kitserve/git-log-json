@@ -60,25 +60,25 @@ def main(argv):
 		# Default to current active branch
 		if args['branch'] is None:
 			branch = repo.active_branch
+		# Check that the requested branch exists in the repo
+		else:
+			branch = None
+			for ref in repo.references:
+				if args['branch'] == 'main':
+					if 'main' == ref.name:
+						branch = 'main'
+						break
+					elif 'master' == ref.name:
+						branch = 'master'
+						break
+				else:
+					if args['branch'] == ref.name:
+						branch = args['branch']
+						break
+
 	except Exception as e:
 		print(f'Error: repo "{path}" is in detached head state. Error details:\n{e}\nExiting.', file=sys.stderr)
 		sys.exit(4)
-
-	# Check that the requested branch exists in the repo
-	else:
-		branch = None
-		for ref in repo.references:
-			if args['branch'] == 'main':
-				if 'main' == ref.name:
-					branch = 'main'
-					break
-				elif 'master' == ref.name:
-					branch = 'master'
-					break
-			else:
-				if args['branch'] == ref.name:
-					branch = args['branch']
-					break
 
 		if not branch:
 			print(f'Branch "{args["branch"]}" not found in repo "{path}". Terminating.', file=sys.stderr)
